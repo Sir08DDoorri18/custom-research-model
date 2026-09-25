@@ -43,6 +43,9 @@ class ClaudeAgent:
         self.usage: dict = {}
 
     async def start(self) -> None:
+        """Launch the Claude process; does nothing if it is already running."""
+        if self.client:
+            return
         from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, create_sdk_mcp_server
         server = create_sdk_mcp_server("research", tools=self._tools())
         os.makedirs(SANDBOX, exist_ok=True)
@@ -59,8 +62,9 @@ class ClaudeAgent:
             thinking={"type": "adaptive", "display": "summarized"},
             max_turns=40,
         )
-        self.client = ClaudeSDKClient(options=options)
-        await self.client.connect()
+        client = ClaudeSDKClient(options=options)
+        await client.connect()
+        self.client = client  # only once connected, so a failed start is retried next message
 
     async def turn(self, text: str, images: list[str] = ()) -> str:
         """images: pictures the user attached; Claude looks at them itself, next to the

@@ -4,14 +4,26 @@ Every tool call, model call and thinking block shows up as a collapsible step wh
 The answer is followed by the sentence-by-sentence verification and the source list.
 """
 import asyncio
+import logging
 import re
 import sys
+import warnings
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # chainlit loads this file by path
 
 import chainlit as cl
 from chainlit.utils import utc_now
+
+# Keep the server console to what matters: silence per-request INFO lines and known
+# harmless warnings (a Chainlit-internal un-awaited profile call, torch's 3.14 notice,
+# the missing chainlit_ko.md lookup that falls back to chainlit.md as intended).
+for noisy in ("httpx", "mcp", "claude_agent_sdk"):
+    logging.getLogger(noisy).setLevel(logging.WARNING)
+logging.getLogger("chainlit").addFilter(
+    lambda r: not any(s in r.getMessage() for s in ("Translated markdown file", "Missing custom logo")))
+warnings.filterwarnings("ignore", message="coroutine 'chat_profiles' was never awaited")
+warnings.filterwarnings("ignore", message=".*torch.jit.script.*", category=FutureWarning)
 
 from research import cleanup, config, judge, llm, prompts
 from research.agents import make_agent
@@ -103,8 +115,9 @@ async def start():
     cl.user_session.set("queue", queue)
     cl.user_session.set("renderer", renderer)
     try:
+        # Started on the first message, not here: every opened or reloaded tab starts a chat,
+        # and each start would launch a Claude process nobody may use.
         agent = make_agent(preset, session)
-        await agent.start()
     except Exception as e:
         await cl.Message(content=f"! {preset} 시작 실패: {e}").send()
         return
@@ -135,6 +148,7 @@ async def turn(text: str, parent_id: str | None = None, uploads: list[tuple[str,
         summary, images = await asyncio.to_thread(session.add_files, list(uploads))
         text = "[첨부 파일]\n" + summary + "\n\n" + (text or "첨부한 파일을 요약해줘.")
     try:
+        await agent.start()
         answer = await agent.turn(text, images)
     except Exception as e:
         await queue.join()

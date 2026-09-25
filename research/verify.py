@@ -61,8 +61,13 @@ class NLI:
         from transformers.utils import logging as hf_logging
         hf_logging.set_verbosity_error()
         hf_logging.disable_progress_bar()
-        self.tok = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForSequenceClassification.from_pretrained(model_name).eval()
+        try:  # already downloaded: load without asking the Hub for updates (saves several requests)
+            self.tok = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
+            self.model = AutoModelForSequenceClassification.from_pretrained(model_name, local_files_only=True)
+        except OSError:  # first run: download
+            self.tok = AutoTokenizer.from_pretrained(model_name)
+            self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        self.model.eval()
         self.labels = {i: l.lower() for i, l in self.model.config.id2label.items()}
         self.name = model_name
 
