@@ -1,0 +1,13 @@
+# Install CPU torch first (docling and the NLI checker need it):
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+claude-agent-sdk>=0.2.159
+pydantic-ai-slim[openai]>=2.49
+chainlit>=2.11
+openai>=3.19
+httpx>=0.28
+pyyaml>=6.0
+ddgs>=9.16
+python-dotenv>=1.2
+# added files: PDF/DOCX/PPTX/XLSX with tables, figures and equations (docling), fast PDF fallback (pymupdf4llm, AGPL)
+docling>=2.130
+pymupdf4llm>=1.28

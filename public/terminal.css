@@ -1,0 +1,72 @@
+/* Terminal look for the Chainlit UI. Colors and fonts live in theme.json. */
+
+/* no branding */
+img.logo { display: none !important; }
+
+/* empty screen: a prompt line instead of a logo */
+#welcome-screen::before {
+  content: "research@local:~$ _";
+  display: block;
+  color: hsl(var(--primary));
+  font-size: 0.95rem;
+  margin-bottom: 0.5rem;
+}
+
+/* input: flat box with a ">" prompt */
+#message-composer {
+  border-radius: 2px !important;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card)) !important;
+  padding: 0.5rem 0.75rem !important;
+}
+#message-composer:focus-within { border-color: hsl(var(--primary)); }
+#message-composer .relative::before {
+  content: ">";
+  position: absolute;
+  left: 0;
+  top: 0.55rem;
+  color: hsl(var(--primary));
+  font-weight: 600;
+}
+#chat-input { padding-left: 1.1rem !important; font-size: 0.95rem; }
+#chat-submit { border-radius: 2px !important; }
+
+/* header buttons: plain text */
+#chat-profiles, #readme-button { border-radius: 2px !important; font-size: 0.85rem; }
+
+/* user message: a "$" prompt line on the left instead of a bubble on the right */
+[data-step-type="user_message"] .group { justify-content: flex-start !important; }
+[data-step-type="user_message"] .group > :not(.bg-accent) { display: none !important; } /* hover edit button that pushes the line right */
+[data-step-type="user_message"] .bg-accent {
+  background: transparent !important;
+  max-width: 100% !important;
+  padding: 0 !important;
+  color: hsl(var(--foreground));
+}
+[data-step-type="user_message"] .message-content::before {
+  content: "$ ";
+  color: hsl(var(--primary));
+  font-weight: 600;
+  white-space: pre;
+}
+[data-step-type="user_message"] .message-content { flex-direction: row !important; }
+[data-step-type="user_message"] .prose { color: hsl(var(--primary)); }
+
+/* no avatars or status dots */
+.ai-message > span { display: none !important; }
+.ai-message { gap: 0 !important; }
+
+/* steps: dim, one line each until opened */
+[data-step-type="tool"], [data-step-type="llm"] { color: hsl(var(--muted-foreground)); font-size: 0.85rem; }
+[data-step-type="tool"] .step, [data-step-type="llm"] .step { padding-top: 0 !important; padding-bottom: 0 !important; }
+
+/* action buttons under the answer: small bracketed commands */
+.ai-message button:not(:has(svg)) {
+  border: 1px solid hsl(var(--border)) !important;
+  padding: 0 0.5rem !important;
+  height: 1.6rem !important;
+  font-size: 0.8rem;
+}
+
+/* everything square */
+button, .rounded-3xl, .rounded-2xl, .rounded-xl, .rounded-lg { border-radius: 2px !important; }

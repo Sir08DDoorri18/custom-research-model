@@ -1,0 +1,86 @@
+# Which model does what. Edit this file (not the code) when a provider changes its lineup.
+# Model ids are "<provider>/<model id as the provider names it>".
+# Run `python -m research doctor` after editing to check every entry still works.
+
+# Brain = the model you chat with. Pick one in the UI (top-left) or with --preset.
+default_preset: sonnet
+presets:
+  saver:     { backend: claude, model: haiku,  label: "Haiku" }
+  sonnet:    { backend: claude, model: sonnet, label: "Sonnet" }
+  opus:      { backend: claude, model: opus,   label: "Opus" }
+  no-claude: { backend: free,   role: brain,   label: "무료 모델" }
+
+language: Korean   # answer language
+
+# Each role tries its models in order and moves on when one fails (no key, 404, rate limit...).
+# Order chosen from `python -m research eval` runs (2026-09): models that actually answered,
+# fastest first. Mistral's free tier only serves its small models (ministral-14b scored best of them); Kimi K3 on NIM never answered.
+roles:
+  brain:   # only used by the no-claude preset
+    - nim/nvidia/nemotron-3-ultra-550b-a55b
+    - nim/deepseek-ai/deepseek-v4.1-flash
+    - openrouter/qwen/qwen3.8-27b:free
+  rcs:     # reads source passages: relevance score + summary + verbatim quote
+    - mistral/ministral-14b-latest
+    - mistral/ministral-8b-latest
+    - nim/deepseek-ai/deepseek-v4.1-flash
+  vision:  # describes figures in added files and photos (these images leave this PC)
+    - mistral/ministral-14b-latest       # ~2 s per image in tests
+    - nim/google/gemma-4-31b-it          # ~30 s
+    - openrouter/google/gemma-4-31b-it:free
+  first:   # first-pass judge for every checked sentence
+    - groq/openai/gpt-oss-120b
+    - groq/openai/gpt-oss-20b
+    - nim/openai/gpt-oss-20b
+
+# Jury: only sees sentences where the NLI model and the first judge disagree.
+# Keep the members from different model families; a failed member is replaced from jury_fallback.
+jury:
+  - nim/nvidia/nemotron-3-ultra-550b-a55b
+  - mistral/ministral-14b-latest
+  - nim/z-ai/glm-5.3
+# One spare starts alongside the jury and the first three votes back are used, so the first
+# spare should be quick. DeepSeek on NIM timed out as a juror in every run, so it comes last.
+jury_fallback:
+  - openrouter/google/gemma-4-31b-it:free
+  - openrouter/qwen/qwen3.8-27b:free
+  - openrouter/z-ai/glm-5.2:free
+  - nim/deepseek-ai/deepseek-v4.1-flash
+
+# Added files are read on this PC with Docling. formulas: equations become LaTeX instead of
+# being dropped; about 3x slower (a 15-page paper: ~3 min instead of ~1 min on a laptop CPU).
+# Each file is read once and cached under .cache/files.
+files:
+  formulas: true
+
+# Housekeeping, run when the app starts and by `python -m research clean`.
+storage:
+  files_max_mb: 2000   # read files (text + figure images); least recently used go first
+  docs_days: 30        # fetched web pages and papers
+  traces_days: 30      # step-by-step logs in traces/
+
+# Local entailment model (optional: pip install -r requirements-nli.txt). Multilingual, so a
+# Korean sentence can be checked against an English source.
+nli:
+  model: MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7
+
+# All four providers speak the OpenAI chat API. Keys come from .env (see .env.example).
+# min_interval = seconds between requests to stay under free-tier rate limits.
+providers:
+  groq:
+    base_url: https://api.groq.com/openai/v1
+    key_env: GROQ_API_KEY
+    min_interval: 2.0
+  mistral:
+    base_url: https://api.mistral.ai/v1
+    key_env: MISTRAL_API_KEY
+    min_interval: 1.1
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+    key_env: OPENROUTER_API_KEY
+    min_interval: 3.0
+    extra_body: { reasoning: { enabled: true } }
+  nim:
+    base_url: https://integrate.api.nvidia.com/v1
+    key_env: NVIDIA_API_KEY
+    min_interval: 1.5

@@ -1,0 +1,52 @@
+{
+  "custom_fonts": [
+    "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Nanum+Gothic+Coding:wght@400;700&display=swap"
+  ],
+  "variables": {
+    "light": {
+      "--font-sans": "'JetBrains Mono', 'Nanum Gothic Coding', ui-monospace, monospace",
+      "--font-mono": "'JetBrains Mono', 'Nanum Gothic Coding', ui-monospace, monospace",
+      "--radius": "0.15rem",
+      "--background": "0 0% 98%",
+      "--foreground": "220 15% 15%",
+      "--card": "0 0% 96%",
+      "--card-foreground": "220 15% 15%",
+      "--popover": "0 0% 98%",
+      "--popover-foreground": "220 15% 15%",
+      "--primary": "220 8% 32%",
+      "--primary-foreground": "0 0% 100%",
+      "--secondary": "220 10% 92%",
+      "--secondary-foreground": "220 15% 15%",
+      "--muted": "220 10% 92%",
+      "--muted-foreground": "220 8% 45%",
+      "--accent": "220 10% 90%",
+      "--accent-foreground": "220 15% 15%",
+      "--border": "220 10% 85%",
+      "--input": "220 10% 85%",
+      "--ring": "220 8% 45%"
+    },
+    "dark": {
+      "--font-sans": "'JetBrains Mono', 'Nanum Gothic Coding', ui-monospace, monospace",
+      "--font-mono": "'JetBrains Mono', 'Nanum Gothic Coding', ui-monospace, monospace",
+      "--radius": "0.15rem",
+      "--background": "220 16% 6%",
+      "--foreground": "40 10% 86%",
+      "--card": "220 16% 8%",
+      "--card-foreground": "40 10% 86%",
+      "--popover": "220 16% 9%",
+      "--popover-foreground": "40 10% 86%",
+      "--primary": "220 6% 72%",
+      "--primary-foreground": "220 16% 6%",
+      "--secondary": "220 12% 12%",
+      "--secondary-foreground": "40 10% 86%",
+      "--muted": "220 12% 11%",
+      "--muted-foreground": "220 8% 55%",
+      "--accent": "220 12% 14%",
+      "--accent-foreground": "40 10% 90%",
+      "--border": "220 10% 18%",
+      "--input": "220 10% 18%",
+      "--ring": "220 6% 55%",
+      "--sidebar-background": "220 16% 6%"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+# Optional local NLI checker (~1 GB with CPU torch). Install torch first from the CPU index:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements-nli.txt
+transformers>=5.0
+sentencepiece
+protobuf
