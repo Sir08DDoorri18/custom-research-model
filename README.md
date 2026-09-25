@@ -31,3 +31,5 @@ machine. Free-model keys (Groq, Mistral, OpenRouter, NVIDIA) are optional.
 | `eval` | score the judge models |
 
 Run as `python -m research <command>`. Settings live in [models.yaml](models.yaml).
+
+MIT licensed. Dependencies keep their own licenses (pymupdf4llm is AGPL). Tested on Windows, Python 3.14.
