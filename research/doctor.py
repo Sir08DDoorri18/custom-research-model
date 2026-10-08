@@ -32,7 +32,11 @@ def run(check_claude: bool = False) -> None:
     print("\n== roles (위에서부터 순서대로 사용) ==")
     jury, spare = config.jury()
     groups = {r: config.role(r) for r in ("brain", "rcs", "first")} | {"jury": jury, "jury_fallback": spare}
+    groups |= {f"parallel:{r.key}": list(r.models) for r in config.researchers()}
+    groups |= {"parallel:compare": config.compare_models()}
     def status(ref) -> str:
+        if ref.provider == "claude":
+            return "-  Claude 조사원 (구독 사용, 아래 --claude 확인으로 대신)"
         ids = listed.get(ref.provider)
         if ids is None:
             return "-  (키 없음)"

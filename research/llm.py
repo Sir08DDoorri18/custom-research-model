@@ -6,8 +6,11 @@ with its reasoning so it can be inspected later.
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import re
+import shutil
 import threading
 import time
 from collections import defaultdict
@@ -77,12 +80,16 @@ def _wait_turn(p: Provider) -> None:
 
 def usable(ref: ModelRef) -> bool:
     """Has a key and isn't sitting out after a recent failure."""
+    if ref.provider == "claude":
+        return bool(shutil.which("claude")) and not benched(ref)
     p = config.providers().get(ref.provider)
     return bool(p and p.api_key) and not benched(ref)
 
 
 def call(ref: ModelRef, messages: list[dict], label: str, timeout: float | None = None) -> Reply:
     """One request to one model. `timeout` (seconds) overrides the default 150 s limit."""
+    if ref.provider == "claude":
+        return _call_claude(ref, messages, label, timeout)
     p = config.providers().get(ref.provider)
     if p is None:
         raise LLMError(f"{ref}: unknown provider '{ref.provider}' (see providers in models.yaml)")
@@ -127,22 +134,64 @@ def call(ref: ModelRef, messages: list[dict], label: str, timeout: float | None 
 
 def ask(role: str, messages: list[dict], label: str, skip: set[ModelRef] = frozenset()) -> Reply:
     """Try the role's models in order; raise NoModelAvailable if none of them answers."""
+    return ask_any(config.role(role), messages, label, f"role '{role}'", skip)
+
+
+def ask_any(refs: list[ModelRef], messages: list[dict], label: str, what: str = "models",
+            skip: set[ModelRef] = frozenset(), timeout: float | None = None) -> Reply:
+    """Try the models in order; raise NoModelAvailable if none of them answers."""
     errors = []
-    for ref in config.role(role):
+    for ref in refs:
         if ref in skip:
             continue
         if not usable(ref):
             errors.append(f"{ref}: " + (benched(ref) or "no API key"))
             continue
         try:
-            return call(ref, messages, label)
+            return call(ref, messages, label, timeout=timeout)
         except LLMError as e:
             errors.append(str(e))
-    raise NoModelAvailable(f"no model for role '{role}': " + "; ".join(errors))
+    raise NoModelAvailable(f"no model for {what}: " + "; ".join(errors))
 
 
 def role_available(role: str) -> bool:
     return any(usable(r) for r in config.role(role))
+
+
+def _call_claude(ref: ModelRef, messages: list[dict], label: str, timeout: float | None) -> Reply:
+    """One plain-text exchange with Claude ("claude/haiku") through the local claude CLI, with
+    no tools. Used only when a parallel researcher is set to Claude; uses the subscription."""
+    if why := benched(ref):
+        raise LLMError(f"{ref}: 잠시 제외됨 ({why})")
+    prompt = _show(messages)
+
+    async def once() -> tuple[str, str]:
+        from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, ThinkingBlock, query
+        os.makedirs(config.SANDBOX, exist_ok=True)
+        options = ClaudeAgentOptions(model=ref.model, tools=[], allowed_tools=[], permission_mode="dontAsk",
+                                     setting_sources=[], strict_mcp_config=True, cwd=config.SANDBOX, max_turns=1)
+        text, thinking = "", []
+        async for msg in query(prompt=prompt, options=options):
+            if isinstance(msg, AssistantMessage):
+                thinking += [b.thinking for b in msg.content if isinstance(b, ThinkingBlock) and b.thinking.strip()]
+            elif isinstance(msg, ResultMessage):
+                if msg.is_error:
+                    raise LLMError(f"{ref}: {msg.result or msg.subtype}")
+                text = msg.result or ""
+        return text, "\n".join(thinking)
+
+    with trace.span(label, "llm", input=prompt) as s:
+        s.model = str(ref)
+        try:
+            text, reasoning = asyncio.run(asyncio.wait_for(once(), timeout or 150))
+        except LLMError:
+            _bench(ref, "error", "Claude error")
+            raise
+        except Exception as e:  # CLI missing, logged out, timeout
+            _bench(ref, "timeout" if isinstance(e, TimeoutError) else "error", type(e).__name__)
+            raise LLMError(f"{ref}: {type(e).__name__}: {str(e)[:120]}") from e
+        s.output, s.reasoning = text.strip(), reasoning.strip()
+        return Reply(s.output, s.reasoning, ref)
 
 
 def _split_reasoning(msg) -> tuple[str, str]:
@@ -183,7 +232,9 @@ def extract_json(text: str):
     fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.S)
     candidates = ([fence.group(1)] if fence else []) + [text]
     for cand in candidates:
-        for opener, closer in (("[", "]"), ("{", "}")):
+        # Whichever bracket comes first is the outer one: an object holding a list is an object.
+        pairs = sorted((("[", "]"), ("{", "}")), key=lambda p: (cand.find(p[0]) < 0, cand.find(p[0])))
+        for opener, closer in pairs:
             start, end = cand.find(opener), cand.rfind(closer)
             if start != -1 and end > start:
                 try:

@@ -2,7 +2,9 @@
 
 Localhost research assistant for math, science and engineering. It searches papers and the web
 only when needed, and checks every cited sentence of its answer against the source with
-several independent models. Flow diagrams and troubleshooting: [docs/FLOW.md](docs/FLOW.md).
+several independent models. In parallel mode, several models research the question at once
+from different angles (papers, official sources, news, counter-evidence) and their findings
+are compared side by side. Flow diagrams and troubleshooting: [docs/FLOW.md](docs/FLOW.md).
 
 ## Setup
 
@@ -25,7 +27,7 @@ machine. Free-model keys (Groq, Mistral, OpenRouter, NVIDIA) are optional.
 | command | |
 |---|---|
 | `serve` | chat UI |
-| `ask "question" [--file x.pdf]` | one question in the terminal |
+| `ask "question" [--file x.pdf] [--mode parallel]` | one question in the terminal |
 | `doctor` | check keys and models |
 | `clean [--all]` | trim caches |
 | `eval` | score the judge models |

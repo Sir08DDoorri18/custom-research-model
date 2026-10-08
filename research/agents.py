@@ -11,13 +11,12 @@ from __future__ import annotations
 
 import asyncio
 import os
-import tempfile
 from typing import Annotated
 
-from . import config, llm, prompts
+from . import config, llm, parallel, prompts
 from .engine import Session
 
-SANDBOX = os.path.join(tempfile.gettempdir(), "research_agent_sandbox")  # no CLAUDE.md, no project files
+SANDBOX = config.SANDBOX
 
 DOCS = {
     "search_papers": "Search scholarly papers (OpenAlex, Semantic Scholar, arXiv). Returns document ids D#. Use English keywords.",
@@ -25,6 +24,9 @@ DOCS = {
     "citation_graph": "Papers that a paper cites (direction='references') or that cite it (direction='citations'). Returns D#.",
     "read_sources": "Read documents and extract evidence (E#) relevant to the question: relevance, summary, verbatim quote. "
                     "Only E# ids may be cited in answers.",
+    "dispatch_researchers": "Parallel research mode only (messages starting with [병렬 조사]). Several researchers "
+                            "search and read at the same time, each from its own angle; their claims (with E# "
+                            "evidence) are compared and returned. briefs: researcher key -> what to look for.",
 }
 
 
@@ -59,6 +61,7 @@ class ClaudeAgent:
             permission_mode="dontAsk",                    # anything not allowed above is refused
             setting_sources=[],                           # ignore user/project settings and CLAUDE.md
             cwd=SANDBOX,
+            env={"MCP_TOOL_TIMEOUT": str(int((parallel.TIMEOUT + 300) * 1000))},  # researchers + comparison
             thinking={"type": "adaptive", "display": "summarized"},
             max_turns=40,
         )
@@ -145,7 +148,16 @@ class ClaudeAgent:
         async def read_sources(args):
             return await run(s.read_sources, args["question"], list(args["doc_ids"]), args.get("focus", ""))
 
-        return [search_papers, search_web, citation_graph, read_sources]
+        @tool("dispatch_researchers", DOCS["dispatch_researchers"], {
+            "type": "object",
+            "properties": {"question": {"type": "string"},
+                           "briefs": {"type": "object", "additionalProperties": {"type": "string"},
+                                      "description": "e.g. {\"papers\": \"...\", \"counter\": \"...\"}"}},
+            "required": ["question", "briefs"]})
+        async def dispatch_researchers(args):
+            return await run(parallel.dispatch, s, args["question"], args.get("briefs") or {})
+
+        return [search_papers, search_web, citation_graph, read_sources, dispatch_researchers]
 
 
 class FreeAgent:
@@ -178,11 +190,15 @@ class FreeAgent:
         def read_sources(question: str, doc_ids: list[str], focus: str = "") -> str:
             return s.read_sources(question, doc_ids, focus)
 
-        for fn in (search_papers, search_web, citation_graph, read_sources):
+        def dispatch_researchers(question: str, briefs: dict[str, str]) -> str:
+            return parallel.dispatch(s, question, briefs)
+
+        tools = (search_papers, search_web, citation_graph, read_sources, dispatch_researchers)
+        for fn in tools:
             fn.__doc__ = DOCS[fn.__name__]
         self.agent = Agent(FallbackModel(*models) if len(models) > 1 else models[0],
                            instructions=prompts.SYSTEM.format(language=config.language()),
-                           tools=[search_papers, search_web, citation_graph, read_sources])
+                           tools=list(tools))
         self.history = []
 
     async def start(self) -> None:

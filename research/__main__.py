@@ -21,6 +21,8 @@ def main() -> None:
     ask.add_argument("question")
     ask.add_argument("--preset", default=None, choices=list(config.presets()))
     ask.add_argument("--file", action="append", default=[], help="attach a file (repeatable)")
+    ask.add_argument("--mode", default="basic", choices=["basic", "parallel"],
+                     help="parallel = several researchers search at once and their findings are compared")
 
     doc = sub.add_parser("doctor", help="check API keys, models and search APIs")
     doc.add_argument("--claude", action="store_true", help="also send one tiny message to Claude (uses subscription)")
@@ -37,7 +39,7 @@ def main() -> None:
         args = [sys.executable, "-m", "research.serve", str(app), "--port", str(a.port)] + (["--headless"] if a.headless else [])
         sys.exit(subprocess.call(args, cwd=config.ROOT, env={**os.environ, "PYTHONIOENCODING": "utf-8"}))
     if a.cmd == "ask":
-        asyncio.run(_ask(a.question, a.preset or config.default_preset(), a.file))
+        asyncio.run(_ask(a.question, a.preset or config.default_preset(), a.file, a.mode))
     elif a.cmd == "doctor":
         from .doctor import run
         run(check_claude=a.claude)
@@ -52,12 +54,15 @@ def main() -> None:
 
 
 class ConsoleListener:
+    """Prints steps as they happen. In parallel mode researchers run at once, so their lines
+    interleave; each is tagged with its researcher, e.g. "[papers]"."""
+
     def on_start(self, span):
         if span.kind == "tool":
-            print(f"{'  ' * span.depth}▶ {span.name}", flush=True)
+            print(f"{'  ' * span.depth}{_lane(span)}▶ {span.name}", flush=True)
 
     def on_end(self, span):
-        pad = "  " * span.depth
+        pad = "  " * span.depth + _lane(span)
         if span.kind == "llm":
             print(f"{pad}· {span.name}{f' [{span.model}]' if span.model else ''} ({span.seconds:.1f}s)", flush=True)
             text = span.reasoning or span.output
@@ -67,16 +72,23 @@ class ConsoleListener:
             print(f"{pad}✓ {span.name} ({span.seconds:.1f}s)", flush=True)
 
 
-async def _ask(question: str, preset: str, attachments: list[str]) -> None:
-    from . import judge
+def _lane(span) -> str:
+    return f"[{span.lane.removeprefix('r:')}] " if span.lane.startswith("r:") else ""
+
+
+async def _ask(question: str, preset: str, attachments: list[str], mode: str = "basic") -> None:
+    from . import judge, parallel
     from .agents import make_agent
     from .engine import Session
 
     session = Session(ConsoleListener())
+    session.mode = mode
     images: list[str] = []
     if attachments:
         summary, images = session.add_files([(path, None) for path in attachments])
         question = "[첨부 파일]\n" + summary + "\n\n" + question
+    if mode == "parallel":
+        question = parallel.turn_text(question)
     agent = make_agent(preset, session)
     await agent.start()
     try:

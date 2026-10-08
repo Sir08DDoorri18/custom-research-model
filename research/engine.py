@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 import uuid
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
@@ -68,14 +69,25 @@ class Session:
         self.evidence: dict[str, Evidence] = {}
         self._doc_keys: dict[str, str] = {}
         self._passage_keys: dict[tuple[str, str], str] = {}
+        self._lock = threading.RLock()     # parallel researchers register documents at the same time
+        self.mode = "basic"                # "parallel" lets the chat model dispatch researchers
 
-    def _span(self, name: str, input: str = ""):
+    def _span(self, name: str, input: str = "", lane: str | None = None):
         trace.use(self.tracer)  # model calls made inside this tool are traced into this session
-        return self.tracer.span(name, "tool", input)
+        return self.tracer.span(name, "tool", input, lane=lane)
 
     # ---------- tools ----------
 
     def search_papers(self, query: str, limit: int = 8) -> str:
+        return self.find_papers(query, limit)[1]
+
+    def search_web(self, query: str, limit: int = 8) -> str:
+        return self.find_web(query, limit)[1]
+
+    def read_sources(self, question: str, doc_ids: list[str], focus: str = "") -> str:
+        return self.read(question, doc_ids, focus)[1]
+
+    def find_papers(self, query: str, limit: int = 8) -> tuple[list[Doc], str]:
         with self._span(f"논문 검색 · {query}", input=query) as s:
             finders = [("OpenAlex", sources.openalex_search), ("Semantic Scholar", sources.s2_search),
                        ("arXiv", sources.arxiv_search)]
@@ -88,15 +100,15 @@ class Session:
             papers = [lst[i] for i in range(max(map(len, lists), default=0)) for lst in lists if i < len(lst)]
             docs = self._register_papers(papers)[: limit + 4]
             s.output = self._list_docs(docs) + "\n\n_" + " · ".join(notes) + "_"
-            return s.output
+            return docs, s.output
 
-    def search_web(self, query: str, limit: int = 8) -> str:
+    def find_web(self, query: str, limit: int = 8) -> tuple[list[Doc], str]:
         with self._span(f"웹 검색 · {query}", input=query) as s:
             found, err = _safe("web", sources.web_search, query, limit)
             docs = [self._add_doc(title=r["title"], url=r["url"], kind=sources.grade_url(r["url"]), snippet=r["snippet"])
                     for r in found]
             s.output = self._list_docs(docs) if docs else f"결과 없음{f' ({err})' if err else ''}"
-            return s.output
+            return docs, s.output
 
     def citation_graph(self, doc_id: str, direction: str = "references", limit: int = 10) -> str:
         with self._span(f"인용 따라가기 · {doc_id} {direction}", input=f"{doc_id} {direction}") as s:
@@ -114,7 +126,7 @@ class Session:
             s.output = self._list_docs(docs) if docs else f"결과 없음{f' ({err})' if err else ''}"
             return s.output
 
-    def read_sources(self, question: str, doc_ids: list[str], focus: str = "") -> str:
+    def read(self, question: str, doc_ids: list[str], focus: str = "") -> tuple[list[Evidence], str]:
         with self._span(f"자료 읽기 · {', '.join(doc_ids)}", input=f"{question}\nfocus: {focus}") as s:
             docs, notes = [], []
             for d in doc_ids:
@@ -144,7 +156,7 @@ class Session:
             new = self._register_evidence(items)
             body = "\n".join(self._fmt_evidence(e) for e in new) or "관련 있는 내용을 찾지 못했어요."
             s.output = body + (("\n\n_" + " · ".join(notes) + "_") if notes else "")
-            return s.output
+            return new, s.output
 
     def add_files(self, items: list[tuple[str, str | None]]) -> tuple[str, list[str]]:
         """Read files the user added and register each (and each described figure) as documents.
@@ -238,6 +250,10 @@ class Session:
         return [r for rows in pmap(read, list(enumerate(batches, 1)), workers=3) for r in rows]
 
     def _register_evidence(self, items: list[dict], min_relevance: float = 4, cap: int = 10) -> list[Evidence]:
+        with self._lock:
+            return self._register_evidence_locked(items, min_relevance, cap)
+
+    def _register_evidence_locked(self, items: list[dict], min_relevance: float, cap: int) -> list[Evidence]:
         new = []
         for it in sorted(items, key=lambda r: -r["relevance"]):
             if it["relevance"] < min_relevance or len(new) >= cap:
@@ -282,6 +298,10 @@ class Session:
                 for p in merged.values()]
 
     def _add_doc(self, title: str, url: str, kind: str, **kw) -> Doc:
+        with self._lock:
+            return self._add_doc_locked(title, url, kind, **kw)
+
+    def _add_doc_locked(self, title: str, url: str, kind: str, **kw) -> Doc:
         key = (kw.get("doi") or "").lower() or url or _norm_title(title)
         if key in self._doc_keys:
             doc = self.docs[self._doc_keys[key]]

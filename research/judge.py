@@ -108,7 +108,7 @@ def _around(passage: str, quote: str, n: int) -> str:
 
 def check(session: Session, answer: str) -> Report:
     trace.use(session.tracer)
-    with session.tracer.span("답변 검증", "tool", input=answer) as root:
+    with session.tracer.span("답변 검증", "tool", input=answer, lane="verify") as root:
         claims, uncited = split_claims(answer, session)
         checkable = [c for c in claims if c.ids]
         for c in claims:

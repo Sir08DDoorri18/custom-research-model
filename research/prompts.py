@@ -31,7 +31,84 @@ and unsupported sentences will be flagged to the user, so cite precisely.
 
 Keep it economical: usually 1-3 searches and 1-2 read_sources calls per question. For follow-up
 questions reuse evidence you already have when it covers the question. Do not write a reference
-list; it is appended automatically. Do not use emoji. Write the answer in {language}."""
+list; it is appended automatically. Do not use emoji. Write the answer in {language}.
+
+There is one more tool, dispatch_researchers, for parallel research mode. Use it only when the
+user's message starts with "[병렬 조사]"; it refuses otherwise. That message explains how."""
+
+# Prefixed to the user's message in parallel mode.
+PARALLEL_TURN = """[병렬 조사] Parallel research mode is on for this message.
+If the question needs lookup, call dispatch_researchers once instead of the search tools. Give it
+the question and a brief for each researcher you want; leave out researchers that cannot help
+(e.g. news for a pure math question). Researchers: {roles}
+Each researcher searches and reads on its own and returns claims tied to evidence ids (E#). The
+tool then compares them: agreed (several researchers AND several independent sources), same
+source (several researchers but one underlying source, which counts once), disputed, single.
+Write the answer from those results. Lead with what is agreed, then say plainly what is disputed
+and why, and what rests on a single researcher or source. Cite E-ids as usual. Researchers that
+agree only because they read the same source are not independent confirmation.
+If the question needs no lookup, just answer it.
+
+{question}"""
+
+ROLE_FOCUS = {
+    "papers": "peer-reviewed papers and preprints: original measurements, methods, reviews",
+    "official": "official and institutional sources: standards bodies, government agencies, universities, "
+                "manufacturer documentation",
+    "news": "recent news, reports and general web coverage: what is new, what changed, who said what",
+    "counter": "evidence AGAINST the obvious answer: criticism, limitations, failed replications, "
+               "retractions, conflicting measurements",
+    "claude": "whatever sources answer the question best",
+}
+
+QUERIES = """You are one of several researchers working on the same question in parallel.
+Your angle: {focus}
+Brief from the lead: {brief}
+
+Question: {question}
+
+Write {n} search queries for your angle. Queries go to {engine}. Each query is 3-8 plain
+keywords: no OR/AND operators, no quotes, no year ranges. Use English unless the topic is
+specifically Korean. Make them different from each other.
+Reply with JSON only: {{"queries": ["...", "..."], "why": "<one sentence: your plan>"}}"""
+
+PICK = """You are a researcher. Your angle: {focus}
+Question: {question}
+
+Search results:
+{docs}
+
+Choose up to {n} documents worth reading for your angle. Prefer primary sources; skip
+duplicates and obviously off-topic items.
+Reply with JSON only: {{"read": ["D3", "D7"], "why": "<one sentence>"}}"""
+
+FINDINGS = """You are a researcher. Your angle: {focus}
+Question: {question}
+
+Evidence you collected (only these ids exist):
+{evidence}
+
+State what this evidence shows about the question. Each claim must rest on the evidence ids
+listed with it; do not use outside knowledge. Claims are statements about the subject (values,
+findings, conditions), never about the evidence itself: "the sources give no number" belongs in
+"gaps", not in claims. If the evidence is thin or off-topic, say so in "gaps" and return few or
+no claims.
+Reply with JSON only, claims in {language}:
+{{"claims": [{{"claim": "...", "evidence": ["E2"], "confidence": "high" | "medium" | "low"}}],
+  "conclusion": "<one or two sentences>", "gaps": "<what you could not find>"}}"""
+
+COMPARE = """Several researchers studied the same question independently. Group their claims.
+
+Question: {question}
+
+Claims (id, researcher, claim, evidence):
+{claims}
+
+Put claims that state the same thing in one group. If a claim contradicts a group, list it in
+that group's "oppose" instead of starting a new group. Every claim id must appear exactly once.
+Reply with JSON only, statements in {language}:
+[{{"statement": "<the shared claim in one sentence>", "support": ["c1", "c4"], "oppose": ["c7"],
+   "note": "<what the disagreement is about, or empty>"}}]"""
 
 DEEPER = ("앞의 질문을 더 깊게 조사해줘. 검색어를 바꿔 추가로 찾고, 핵심 논문은 citation_graph로 "
           "원출처와 후속 연구를 확인해서 결론이 유지되는지 봐줘.")

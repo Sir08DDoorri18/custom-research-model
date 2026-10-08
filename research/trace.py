@@ -35,6 +35,8 @@ class Span:
     started: float = field(default_factory=time.time)
     ended: float | None = None
     depth: int = 0
+    lane: str = ""                 # which panel shows it in parallel mode; children inherit it
+    data: dict = field(default_factory=dict)   # structured results for the panel (findings, comparison)
 
     @property
     def seconds(self) -> float:
@@ -55,10 +57,12 @@ class Tracer:
         self.path = TRACE_DIR / f"{dt.datetime.now():%Y%m%d-%H%M%S}-{session_id}.md"
 
     @contextmanager
-    def span(self, name: str, kind: str = "tool", input: str = "", parent: Span | None = None):
+    def span(self, name: str, kind: str = "tool", input: str = "", parent: Span | None = None,
+             lane: str | None = None):
         parent = parent or _current.get() or self.root
         s = Span(name=name, kind=kind, input=input,
-                 parent_id=parent.id if parent else None, depth=parent.depth + 1 if parent else 0)
+                 parent_id=parent.id if parent else None, depth=parent.depth + 1 if parent else 0,
+                 lane=lane if lane is not None else parent.lane if parent else "")
         token = _current.set(s)
         if self.listener:
             self.listener.on_start(s)
@@ -81,7 +85,8 @@ class Tracer:
 
     def _write(self, s: Span) -> None:
         head = "#" * min(2 + s.depth, 6)
-        parts = [f"{head} [{s.kind}] {s.name}" + (f" · {s.model}" if s.model else "") + f" · {s.seconds:.1f}s"]
+        parts = [f"{head} [{s.kind}]" + (f" ({s.lane})" if s.lane else "") + f" {s.name}"
+                 + (f" · {s.model}" if s.model else "") + f" · {s.seconds:.1f}s"]
         if s.input:
             parts.append(f"**input**\n\n```\n{s.input}\n```")
         if s.reasoning:
@@ -101,12 +106,12 @@ def use(tracer: Tracer) -> None:
 
 
 @contextmanager
-def span(name: str, kind: str = "tool", input: str = ""):
+def span(name: str, kind: str = "tool", input: str = "", lane: str | None = None):
     tracer = _tracer.get()
     if tracer is None:  # tracing off (e.g. eval runs): hand back a throwaway span
         yield Span(name=name, kind=kind, input=input)
         return
-    with tracer.span(name, kind, input) as s:
+    with tracer.span(name, kind, input, lane=lane) as s:
         yield s
 
 

@@ -47,6 +47,41 @@ jury_fallback:
   - openrouter/z-ai/glm-5.2:free
   - nim/deepseek-ai/deepseek-v4.1-flash
 
+# Parallel research mode (switch in the UI settings, or `ask --mode parallel`). Each researcher
+# searches and reads from its own angle at the same time; their claims are then compared.
+# Keep the researchers on different model families so they don't share the same blind spots.
+# search: papers | web | both. prefer: document kinds read first. The angle each one takes is
+# written in research/prompts.py (ROLE_FOCUS); a new key there gets a generic angle.
+parallel:
+  max_docs: 4               # documents each researcher reads
+  claude_researcher: false  # true = add a Claude researcher too (uses the subscription)
+  claude_model: haiku
+  researchers:
+    papers:
+      label: 논문
+      search: papers
+      models: [mistral/ministral-14b-latest, nim/deepseek-ai/deepseek-v4.1-flash]
+    official:
+      label: 공식 자료
+      search: web
+      prefer: [institution, paper, preprint]
+      models: [groq/openai/gpt-oss-120b, groq/openai/gpt-oss-20b]
+    news:
+      label: 뉴스·웹
+      search: web
+      prefer: [news, web]
+      models: [nim/nvidia/nemotron-3-ultra-550b-a55b, nim/deepseek-ai/deepseek-v4.1-flash, groq/openai/gpt-oss-20b]
+    counter:
+      label: 반론
+      search: both
+      # GLM on NIM is sometimes slow and OpenRouter's free quota runs out; the last two keep it running
+      models: [nim/z-ai/glm-5.3, openrouter/google/gemma-4-31b-it:free, nim/deepseek-ai/deepseek-v4.1-flash,
+               mistral/ministral-8b-latest]
+  compare:                  # groups the researchers' claims; falls back to the `first` role
+    - groq/openai/gpt-oss-120b
+    - mistral/ministral-14b-latest
+    - nim/deepseek-ai/deepseek-v4.1-flash
+
 # Added files are read on this PC with Docling. formulas: equations become LaTeX instead of
 # being dropped; about 3x slower (a 15-page paper: ~3 min instead of ~1 min on a laptop CPU).
 # Each file is read once and cached under .cache/files.
