@@ -100,6 +100,8 @@ flowchart TD
 화면: 맨 위에 단계(계획 · 조사 · 비교 · 답변 · 검증), 그 아래 두뇌 칸, 조사원 칸들이 나란히,
 그 아래 비교 칸과 검증 칸. 단계 줄을 누르면 IN(받은 입력) · 사고(사고 과정을 주는 모델만) · OUT이 펼쳐져요.
 `x`는 그 모델이 실패해서 다음 모델로 넘어갔다는 뜻이에요.
+중지 버튼을 누르면 조사원들도 다음 단계에서 멈춰요. `걸린 문장 고치기`는 병렬 모드에서도 새로 조사하지 않고
+이미 모은 근거로만 고쳐요.
 
 ## 파일 올리기
 
@@ -158,15 +160,15 @@ flowchart TD
 ## 모델 역할
 
 역할마다 후보 목록이 있고, 앞의 모델이 실패하면 다음 모델로 자동으로 넘어가요.
-한 번 실패한 모델은 잠시(2~30분) 건너뛰어요.
+한 번 실패한 모델은 잠시(30초~30분) 건너뛰어요. 네트워크가 잠깐 끊긴 경우는 한 번 다시 시도하고 30초만 쉬어요.
 
 | 역할 | 하는 일 | 1순위 → 예비 |
 |---|---|---|
-| 두뇌 | 대화 · 검색 판단 · 답변 | 프리셋: Haiku · Sonnet · Opus (Claude 구독) / 무료 모델 프리셋: Nemotron → DeepSeek → Qwen |
+| 두뇌 | 대화 · 검색 판단 · 답변 | 프리셋: Haiku · Sonnet · Opus (Claude 구독) / 무료 모델 프리셋: Nemotron → DeepSeek → GLM-5.3-flash |
 | rcs (읽기) | 문단마다 관련성 · 요약 · 원문 인용 | ministral-14b → ministral-8b → DeepSeek |
 | vision (그림) | 그림 · 사진 설명 | ministral-14b → Gemma-4 (NVIDIA) → Gemma-4 (OpenRouter) |
 | first (1차 채점) | 모든 인용 문장 채점 | gpt-oss-120b → gpt-oss-20b (Groq) → gpt-oss-20b (NVIDIA) |
-| jury (심사단) | 의견이 갈린 문장만 투표 | Nemotron · ministral-14b · GLM-5.3 / 예비: Gemma → Qwen → GLM-5.2 → DeepSeek |
+| jury (심사단) | 의견이 갈린 문장만 투표 | Nemotron · ministral-14b · GLM-5.3 / 예비: Gemma → GLM-5.3-flash → Nemotron-super → DeepSeek |
 | NLI | 근거가 문장을 뒷받침하나 | mDeBERTa 다국어 (이 PC) |
 
 토큰을 아끼려면 Haiku, 어려운 추론은 Opus. 무료 모델 프리셋은 Claude 구독을 전혀 쓰지 않아요.

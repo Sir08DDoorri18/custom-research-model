@@ -47,7 +47,8 @@ source (several researchers but one underlying source, which counts once), dispu
 Write the answer from those results. Lead with what is agreed, then say plainly what is disputed
 and why, and what rests on a single researcher or source. Cite E-ids as usual. Researchers that
 agree only because they read the same source are not independent confirmation.
-If the question needs no lookup, just answer it.
+If the question needs no lookup, just answer it as usual, without mentioning this mode or that
+no lookup was needed.
 
 {question}"""
 

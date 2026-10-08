@@ -19,7 +19,7 @@ roles:
   brain:   # only used by the no-claude preset
     - nim/nvidia/nemotron-3-ultra-550b-a55b
     - nim/deepseek-ai/deepseek-v4.1-flash
-    - openrouter/qwen/qwen3.8-27b:free
+    - nim/z-ai/glm-5.3-flash               # replaced the free Qwen on OpenRouter (removed 2026-10)
   rcs:     # reads source passages: relevance score + summary + verbatim quote
     - mistral/ministral-14b-latest
     - mistral/ministral-8b-latest
@@ -41,10 +41,11 @@ jury:
   - nim/z-ai/glm-5.3
 # One spare starts alongside the jury and the first three votes back are used, so the first
 # spare should be quick. DeepSeek on NIM timed out as a juror in every run, so it comes last.
+# (The free Qwen and GLM-5.2 on OpenRouter were removed in 2026-10; replaced with NIM models.)
 jury_fallback:
   - openrouter/google/gemma-4-31b-it:free
-  - openrouter/qwen/qwen3.8-27b:free
-  - openrouter/z-ai/glm-5.2:free
+  - nim/z-ai/glm-5.3-flash
+  - nim/nvidia/nemotron-3-super-120b-a12b
   - nim/deepseek-ai/deepseek-v4.1-flash
 
 # Parallel research mode (switch in the UI settings, or `ask --mode parallel`). Each researcher

@@ -90,10 +90,15 @@ def dispatch(session: Session, question: str, briefs: dict[str, str] | None = No
         executor = ThreadPoolExecutor(len(ready))
         futures = {executor.submit(contextvars.copy_context().run, _research, session, r, question,
                                    briefs.get(r.key, "")): r for r in ready}
-        done, _ = wait(futures, timeout=TIMEOUT)
+        pending, deadline = set(futures), started + TIMEOUT
+        while pending and time.time() < deadline and not session.stopped.is_set():
+            _, pending = wait(pending, timeout=1)
         executor.shutdown(wait=False, cancel_futures=True)
-        results = [f.result() if f in done else Result(r, error=f"{TIMEOUT}초 안에 끝나지 않음")
-                   for f, r in futures.items()]
+        late = "중지됨" if session.stopped.is_set() else f"{TIMEOUT}초 안에 끝나지 않음"
+        results = [f.result() if f not in pending else Result(r, error=late) for f, r in futures.items()]
+        if session.stopped.is_set():
+            s.output = "사용자가 조사를 중지했어요."
+            return s.output
         groups, note = compare(session, question, results)
         s.output = _report(session, results, groups, note, skipped, time.time() - started)
         return s.output
@@ -108,6 +113,8 @@ def _research(session: Session, r: Researcher, question: str, brief: str) -> Res
         s.data = {"label": r.label, "role": r.key}
         try:
             _steps(session, r, question, brief, focus, res)
+        except Stopped:
+            res.error = "중지됨"
         except Exception as e:  # a failed researcher is reported; the others carry on
             res.error = f"{type(e).__name__}: {str(e)[:200]}"
         s.data.update(model=res.model, conclusion=res.conclusion, gaps=res.gaps, error=res.error,
@@ -116,7 +123,17 @@ def _research(session: Session, r: Researcher, question: str, brief: str) -> Res
     return res
 
 
-def _ask(r: Researcher, res: Result, prompt: str, label: str):
+class Stopped(Exception):
+    pass
+
+
+def _check(session: Session) -> None:
+    if session.stopped.is_set():
+        raise Stopped
+
+
+def _ask(session: Session, r: Researcher, res: Result, prompt: str, label: str):
+    _check(session)
     reply = llm.ask_any(list(r.models), [{"role": "user", "content": prompt}], label, r.label,
                         timeout=STEP_TIMEOUT)
     res.model = str(reply.model)
@@ -127,12 +144,13 @@ def _steps(session: Session, r: Researcher, question: str, brief: str, focus: st
     cap = int(config.parallel().get("max_docs", 4))
 
     # 1. search queries
-    reply = _ask(r, res, prompts.QUERIES.format(focus=focus, brief=brief or "-", question=question,
+    reply = _ask(session, r, res, prompts.QUERIES.format(focus=focus, brief=brief or "-", question=question,
                                                 n=2, engine=ENGINES[r.search]), "검색어 정하기")
     queries = [q for q in _json_field(reply.text, "queries", list) if isinstance(q, str) and q.strip()][:3]
     queries = queries or [brief or question]
 
     # 2. search (code), all queries at once
+    _check(session)
     finders = [f for f, kinds in ((session.find_papers, ("papers", "both")), (session.find_web, ("web", "both")))
                if r.search in kinds]
     found = pmap(lambda job: job[0](job[1], 6)[0], [(f, q) for q in queries for f in finders], workers=4)
@@ -145,13 +163,14 @@ def _steps(session: Session, r: Researcher, question: str, brief: str, focus: st
     # 3. pick what to read
     ids = [d.id for d in docs]
     if len(docs) > cap:
-        reply = _ask(r, res, prompts.PICK.format(focus=focus, question=question, n=cap,
+        reply = _ask(session, r, res, prompts.PICK.format(focus=focus, question=question, n=cap,
                                                  docs=session._list_docs(docs[:20])), "읽을 문서 고르기")
         picked = [i.strip().upper() for i in _json_field(reply.text, "read", list) if isinstance(i, str)]
         ids = [i for i in dict.fromkeys(picked) if i in ids][:cap] or ids[:cap]
     res.read = ids
 
     # 4. read (rcs model + quote check, shared with basic mode)
+    _check(session)
     res.evidence, _ = session.read(f"{question}\n{brief}".strip(), ids, " ".join(queries))
     if not res.evidence:
         res.gaps = "읽은 문서에서 관련 근거를 찾지 못함"
@@ -159,7 +178,7 @@ def _steps(session: Session, r: Researcher, question: str, brief: str, focus: st
 
     # 5. findings
     own = {e.id for e in res.evidence}
-    reply = _ask(r, res, prompts.FINDINGS.format(focus=focus, question=question, language=config.language(),
+    reply = _ask(session, r, res, prompts.FINDINGS.format(focus=focus, question=question, language=config.language(),
                                                  evidence="\n".join(session._fmt_evidence(e) for e in res.evidence)),
                  "결론 내기")
     try:

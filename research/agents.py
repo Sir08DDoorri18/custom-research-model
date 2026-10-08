@@ -16,8 +16,6 @@ from typing import Annotated
 from . import config, llm, parallel, prompts
 from .engine import Session
 
-SANDBOX = config.SANDBOX
-
 DOCS = {
     "search_papers": "Search scholarly papers (OpenAlex, Semantic Scholar, arXiv). Returns document ids D#. Use English keywords.",
     "search_web": "Web search for news, official documentation and institutional pages. Returns document ids D#.",
@@ -50,7 +48,7 @@ class ClaudeAgent:
             return
         from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, create_sdk_mcp_server
         server = create_sdk_mcp_server("research", tools=self._tools())
-        os.makedirs(SANDBOX, exist_ok=True)
+        os.makedirs(config.SANDBOX, exist_ok=True)
         options = ClaudeAgentOptions(
             model=self.model,
             system_prompt=prompts.SYSTEM.format(language=config.language()),
@@ -60,7 +58,7 @@ class ClaudeAgent:
             allowed_tools=[f"mcp__research__{n}" for n in DOCS],
             permission_mode="dontAsk",                    # anything not allowed above is refused
             setting_sources=[],                           # ignore user/project settings and CLAUDE.md
-            cwd=SANDBOX,
+            cwd=config.SANDBOX,
             env={"MCP_TOOL_TIMEOUT": str(int((parallel.TIMEOUT + 300) * 1000))},  # researchers + comparison
             thinking={"type": "adaptive", "display": "summarized"},
             max_turns=40,

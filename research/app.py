@@ -20,7 +20,7 @@ from chainlit.utils import utc_now
 # Keep the server console to what matters: silence per-request INFO lines and known
 # harmless warnings (a Chainlit-internal un-awaited profile call, torch's 3.14 notice,
 # the missing chainlit_ko.md lookup that falls back to chainlit.md as intended).
-for noisy in ("httpx", "mcp", "claude_agent_sdk"):
+for noisy in ("httpx", "httpx2", "primp", "mcp", "claude_agent_sdk"):  # httpx2/primp: web search requests
     logging.getLogger(noisy).setLevel(logging.WARNING)
 logging.getLogger("chainlit").addFilter(
     lambda r: not any(s in r.getMessage() for s in ("Translated markdown file", "Missing custom logo")))
@@ -165,6 +165,7 @@ async def turn(text: str, parent_id: str | None = None, uploads: list[tuple[str,
         await cl.Message(content="에이전트가 시작되지 않았어요. 새 채팅을 열거나 다른 프리셋을 골라주세요.").send()
         return
     session.mode = mode or cl.user_session.get("mode") or "basic"
+    session.stopped.clear()
     question = text
     panel = _Panel(agent.label, ui) if session.mode == "parallel" else None
     if panel:
@@ -276,12 +277,15 @@ async def parallel_again(action: cl.Action):
 
 @cl.action_callback("fix")
 async def fix(action: cl.Action):
-    await _follow_up(prompts.FIX.format(problems=action.payload.get("problems", "")), "걸린 문장을 고쳐줘")
+    # Fixing rewrites from the evidence already collected: no new research round, even in parallel mode.
+    await _follow_up(prompts.FIX.format(problems=action.payload.get("problems", "")), "걸린 문장을 고쳐줘", mode="basic")
 
 
 @cl.on_stop
 async def stop():
-    agent = cl.user_session.get("agent")
+    agent, session = cl.user_session.get("agent"), cl.user_session.get("session")
+    if session:
+        session.stopped.set()  # parallel researchers stop at their next step
     client = getattr(agent, "client", None)
     if client:
         await client.interrupt()

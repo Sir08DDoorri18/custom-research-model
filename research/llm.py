@@ -45,7 +45,7 @@ _benched: dict[str, tuple[float, str]] = {}   # model -> (until, why): skipped i
 
 # How long a model sits out after each kind of failure. Without this, every call to a dead
 # model waits for its timeout again (one NIM model hung for over an hour across a single eval).
-BENCH = {"rate": 120, "timeout": 600, "gone": 1800, "error": 60}
+BENCH = {"rate": 120, "timeout": 600, "gone": 1800, "error": 60, "network": 30}
 
 
 def _client(p: Provider) -> OpenAI:
@@ -119,8 +119,16 @@ def call(ref: ModelRef, messages: list[dict], label: str, timeout: float | None 
                         else "error")
                 _bench(ref, kind, f"HTTP {e.status_code}")
                 raise LLMError(f"{ref}: HTTP {e.status_code} {_short(e)}") from e
-            except (APIConnectionError, APITimeoutError) as e:
+            except APITimeoutError as e:  # the model hung: sit out long
                 _bench(ref, "timeout", type(e).__name__)
+                raise LLMError(f"{ref}: {type(e).__name__}") from e
+            except APIConnectionError as e:
+                # Usually our own network blinking, which hits every model at once: retry after
+                # a short wait, and if it persists sit out only briefly instead of 10 minutes.
+                if attempt == 0:
+                    time.sleep(2)
+                    continue
+                _bench(ref, "network", type(e).__name__)
                 raise LLMError(f"{ref}: {type(e).__name__}") from e
         else:
             _bench(ref, "error", "retries exhausted")

@@ -71,6 +71,7 @@ class Session:
         self._passage_keys: dict[tuple[str, str], str] = {}
         self._lock = threading.RLock()     # parallel researchers register documents at the same time
         self.mode = "basic"                # "parallel" lets the chat model dispatch researchers
+        self.stopped = threading.Event()   # set by the stop button; researchers quit at their next step
 
     def _span(self, name: str, input: str = "", lane: str | None = None):
         trace.use(self.tracer)  # model calls made inside this tool are traced into this session
