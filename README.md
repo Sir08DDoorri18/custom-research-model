@@ -4,7 +4,8 @@ Localhost research assistant for math, science and engineering. It searches pape
 only when needed, and checks every cited sentence of its answer against the source with
 several independent models. In parallel mode, several models research the question at once
 from different angles (papers, official sources, news, counter-evidence) and their findings
-are compared side by side. Flow diagrams and troubleshooting: [docs/FLOW.md](docs/FLOW.md).
+are compared side by side. Conversations are saved on this machine (SQLite, deleted after 30
+days) and can be reopened after a reload. Flow diagrams and troubleshooting: [docs/FLOW.md](docs/FLOW.md).
 
 ## Setup
 

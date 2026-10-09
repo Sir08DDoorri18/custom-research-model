@@ -11,7 +11,7 @@ import os
 import re
 import threading
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from urllib.parse import urlparse
 
 from . import config, files, llm, prompts, rank, sources, trace
@@ -72,6 +72,48 @@ class Session:
         self._lock = threading.RLock()     # parallel researchers register documents at the same time
         self.mode = "basic"                # "parallel" lets the chat model dispatch researchers
         self.stopped = threading.Event()   # set by the stop button; researchers quit at their next step
+        self.progress: list[dict] = []     # what this question has found so far (for 이어서 하기)
+        self.on_progress = None            # called after each step that found something (saves a checkpoint)
+
+    # ---------- progress, saved so an interrupted question can be continued ----------
+
+    def note(self, label: str, text: str, lane: str = "") -> None:
+        """Record a finished step's result and let the app save it. Steps inside a parallel
+        researcher are skipped: the researcher's own result is recorded when it finishes."""
+        if lane.startswith("r:"):
+            return
+        with self._lock:
+            self.progress.append({"label": label, "text": text[:4000]})
+            del self.progress[:-24]
+        if self.on_progress:
+            try:
+                self.on_progress()
+            except Exception as e:  # saving must never break the research itself
+                print(f"[checkpoint] save failed: {e}", flush=True)
+
+    def snapshot(self) -> dict:
+        """Documents and evidence as plain data. Full texts are dropped except for the user's own
+        files (pages can be fetched again; evidence keeps its passage, which is what is checked)."""
+        with self._lock:
+            docs = [{k: v for k, v in asdict(d).items() if k != "text" or d.kind in ("file", "figure")}
+                    for d in self.docs.values()]
+            evidence = [{**{k: v for k, v in asdict(e).items() if k != "doc"}, "doc": e.doc.id}
+                        for e in self.evidence.values()]
+            return {"docs": docs, "evidence": evidence, "progress": list(self.progress)}
+
+    def restore(self, data: dict) -> None:
+        """Bring back documents and evidence from snapshot(), keeping their ids (D3, E7...)."""
+        with self._lock:
+            for d in data.get("docs") or []:
+                doc = Doc(**d)
+                self.docs[doc.id] = doc
+                self._doc_keys[(doc.doi or "").lower() or doc.url or _norm_title(doc.title)] = doc.id
+            for e in data.get("evidence") or []:
+                doc = self.docs.get(e["doc"])
+                if doc:
+                    ev = Evidence(**{**e, "doc": doc})
+                    self.evidence[ev.id] = ev
+                    self._passage_keys[(doc.id, ev.passage[:200])] = ev.id
 
     def _span(self, name: str, input: str = "", lane: str | None = None):
         trace.use(self.tracer)  # model calls made inside this tool are traced into this session
@@ -101,6 +143,7 @@ class Session:
             papers = [lst[i] for i in range(max(map(len, lists), default=0)) for lst in lists if i < len(lst)]
             docs = self._register_papers(papers)[: limit + 4]
             s.output = self._list_docs(docs) + "\n\n_" + " · ".join(notes) + "_"
+            self.note(s.name, s.output[:800], s.lane)
             return docs, s.output
 
     def find_web(self, query: str, limit: int = 8) -> tuple[list[Doc], str]:
@@ -109,6 +152,7 @@ class Session:
             docs = [self._add_doc(title=r["title"], url=r["url"], kind=sources.grade_url(r["url"]), snippet=r["snippet"])
                     for r in found]
             s.output = self._list_docs(docs) if docs else f"결과 없음{f' ({err})' if err else ''}"
+            self.note(s.name, s.output[:800], s.lane)
             return docs, s.output
 
     def citation_graph(self, doc_id: str, direction: str = "references", limit: int = 10) -> str:
@@ -125,6 +169,7 @@ class Session:
             found, err = _safe("Semantic Scholar", sources.s2_graph, ref, direction, limit)
             docs = self._register_papers(found)
             s.output = self._list_docs(docs) if docs else f"결과 없음{f' ({err})' if err else ''}"
+            self.note(s.name, s.output[:800], s.lane)
             return s.output
 
     def read(self, question: str, doc_ids: list[str], focus: str = "") -> tuple[list[Evidence], str]:
@@ -157,6 +202,7 @@ class Session:
             new = self._register_evidence(items)
             body = "\n".join(self._fmt_evidence(e) for e in new) or "관련 있는 내용을 찾지 못했어요."
             s.output = body + (("\n\n_" + " · ".join(notes) + "_") if notes else "")
+            self.note(s.name, s.output, s.lane)
             return new, s.output
 
     def add_files(self, items: list[tuple[str, str | None]]) -> tuple[str, list[str]]:

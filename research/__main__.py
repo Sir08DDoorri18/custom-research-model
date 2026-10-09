@@ -28,7 +28,8 @@ def main() -> None:
     doc.add_argument("--claude", action="store_true", help="also send one tiny message to Claude (uses subscription)")
 
     cln = sub.add_parser("clean", help="trim caches and old logs (limits: storage in models.yaml)")
-    cln.add_argument("--all", action="store_true", help="remove every cached file, page and log (not the models)")
+    cln.add_argument("--all", action="store_true",
+                     help="remove every cached file, page, log and saved conversation (not the models)")
 
     ev = sub.add_parser("eval", help="score each judge model on eval/claims.jsonl")
     ev.add_argument("--file", default=str(config.ROOT / "eval" / "claims.jsonl"))
@@ -46,7 +47,7 @@ def main() -> None:
     elif a.cmd == "clean":
         from . import cleanup
         print("before:", cleanup.usage())
-        print(cleanup.prune(0, 0, 0) if a.all else cleanup.prune())
+        print(cleanup.prune(0, 0, 0, 0) if a.all else cleanup.prune())
         print("after: ", cleanup.usage())
     elif a.cmd == "eval":
         from .evaluate import run
@@ -79,6 +80,7 @@ def _lane(span) -> str:
 async def _ask(question: str, preset: str, attachments: list[str], mode: str = "basic") -> None:
     from . import judge, parallel
     from .agents import make_agent
+    from .awake import awake
     from .engine import Session
 
     session = Session(ConsoleListener())
@@ -90,12 +92,13 @@ async def _ask(question: str, preset: str, attachments: list[str], mode: str = "
     if mode == "parallel":
         question = parallel.turn_text(question)
     agent = make_agent(preset, session)
-    await agent.start()
-    try:
-        answer = await agent.turn(question, images)
-    finally:
-        await agent.close()
-    report = await asyncio.to_thread(judge.check, session, answer)
+    with awake():  # don't let the PC sleep in the middle of a long question
+        await agent.start()
+        try:
+            answer = await agent.turn(question, images)
+        finally:
+            await agent.close()
+        report = await asyncio.to_thread(judge.check, session, answer)
     print("\n" + "=" * 60 + "\n" + answer + "\n\n" + judge.render(report, session, answer))
     print(f"\n(trace: {session.tracer.path})")
 

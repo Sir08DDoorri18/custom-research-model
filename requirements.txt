@@ -8,6 +8,9 @@ httpx>=0.28
 pyyaml>=6.0
 ddgs>=9.16
 python-dotenv>=1.2
+# saved conversations (SQLite on this PC)
+sqlalchemy[asyncio]>=2.1
+aiosqlite>=0.22
 # added files: PDF/DOCX/PPTX/XLSX with tables, figures and equations (docling), fast PDF fallback (pymupdf4llm, AGPL)
 docling>=2.130
 pymupdf4llm>=1.28

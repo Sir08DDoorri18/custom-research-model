@@ -94,6 +94,7 @@ storage:
   files_max_mb: 2000   # read files (text + figure images); least recently used go first
   docs_days: 30        # fetched web pages and papers
   traces_days: 30      # step-by-step logs in traces/
+  history_days: 30     # saved conversations (지난 대화)
 
 # Local entailment model (optional: pip install -r requirements-nli.txt). Multilingual, so a
 # Korean sentence can be checked against an English source.

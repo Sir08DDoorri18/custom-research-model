@@ -4,6 +4,7 @@
 - .cache/docs   fetched pages: removed after docs_days
 - traces/       logs: removed after traces_days
 - .cache/tmp    scratch space of the PDF reader: emptied when older than a day
+- saved conversations (.cache/history.db): removed after history_days
 The local models in .cache/hf are left alone (they don't grow and are costly to re-download).
 """
 from __future__ import annotations
@@ -23,20 +24,24 @@ DAY = 86400
 
 
 def prune(files_max_mb: float | None = None, docs_days: float | None = None,
-          traces_days: float | None = None) -> str:
+          traces_days: float | None = None, history_days: float | None = None) -> str:
     """Apply the limits; arguments override models.yaml. Returns a one-line summary."""
+    from . import history
     cfg = config.load().get("storage") or {}
     files_max = (files_max_mb if files_max_mb is not None else cfg.get("files_max_mb", 2000)) * 1024 * 1024
     docs_age = (docs_days if docs_days is not None else cfg.get("docs_days", 30)) * DAY
     traces_age = (traces_days if traces_days is not None else cfg.get("traces_days", 30)) * DAY
+    talks = history.prune(history_days if history_days is not None else cfg.get("history_days", 30))
 
     freed = {"files": _prune_files(files_max), "docs": _older_than(DOCS, "*.json", docs_age),
              "traces": _older_than(TRACES, "*.md", traces_age), "tmp": _older_than(TMP, "*", DAY)}
-    return " · ".join(f"{k} {_mb(v)}" for k, v in freed.items()) + " 정리됨"
+    return " · ".join(f"{k} {_mb(v)}" for k, v in freed.items()) + f" · 지난 대화 {talks}개 정리됨"
 
 
 def usage() -> str:
-    parts = {"files": FILES, "docs": DOCS, "traces": TRACES, "models": ROOT / ".cache" / "hf"}
+    from . import history
+    parts = {"files": FILES, "docs": DOCS, "traces": TRACES, "history": history.DB,
+             "models": ROOT / ".cache" / "hf"}
     return " · ".join(f"{k} {_mb(_size(p))}" for k, p in parts.items())
 
 

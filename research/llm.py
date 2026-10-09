@@ -48,13 +48,36 @@ _benched: dict[str, tuple[float, str]] = {}   # model -> (until, why): skipped i
 BENCH = {"rate": 120, "timeout": 600, "gone": 1800, "error": 60, "network": 30}
 
 
+DEFAULT_TIMEOUT = 150  # seconds; reasoning models (DeepSeek on NIM) took ~80 s per judging batch in evals
+
+
 def _client(p: Provider) -> OpenAI:
     if p.name not in _clients:
-        # Non-streaming replies arrive all at once, so this bounds the whole generation.
-        # Reasoning models (DeepSeek on NIM) took ~80 s per judging batch in evals.
-        timeout = httpx.Timeout(150, connect=10)
+        timeout = httpx.Timeout(DEFAULT_TIMEOUT, connect=10)
         _clients[p.name] = OpenAI(base_url=p.base_url, api_key=p.api_key, timeout=timeout, max_retries=0)
     return _clients[p.name]
+
+
+def _within(seconds: float, fn, *args, **kwargs):
+    """fn(...) with a hard wall-clock limit. The HTTP timeout only limits the gap between bytes,
+    so a server that trickles a byte now and then can hold a call for many minutes (one held
+    a researcher for 15 min). Past the limit the call is abandoned in its thread."""
+    box: dict = {}
+
+    def run():
+        try:
+            box["value"] = fn(*args, **kwargs)
+        except BaseException as e:  # handed to the caller below
+            box["error"] = e
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        raise TimeoutError(f"no complete reply within {seconds:.0f} s")
+    if "error" in box:
+        raise box["error"]
+    return box["value"]
 
 
 def _bench(ref: ModelRef, kind: str, why: str) -> None:
@@ -106,7 +129,8 @@ def call(ref: ModelRef, messages: list[dict], label: str, timeout: float | None 
             if timeout:
                 client = client.with_options(timeout=httpx.Timeout(timeout, connect=10))
             try:
-                resp = client.chat.completions.create(model=ref.model, messages=messages, extra_body=extra)
+                resp = _within((timeout or DEFAULT_TIMEOUT) + 10, client.chat.completions.create,
+                               model=ref.model, messages=messages, extra_body=extra)
                 break
             except APIStatusError as e:
                 if e.status_code == 400 and extra:     # provider rejected our extra options: retry plain
@@ -119,7 +143,7 @@ def call(ref: ModelRef, messages: list[dict], label: str, timeout: float | None 
                         else "error")
                 _bench(ref, kind, f"HTTP {e.status_code}")
                 raise LLMError(f"{ref}: HTTP {e.status_code} {_short(e)}") from e
-            except APITimeoutError as e:  # the model hung: sit out long
+            except (APITimeoutError, TimeoutError) as e:  # the model hung: sit out long
                 _bench(ref, "timeout", type(e).__name__)
                 raise LLMError(f"{ref}: {type(e).__name__}") from e
             except APIConnectionError as e:

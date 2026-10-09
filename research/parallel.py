@@ -101,6 +101,7 @@ def dispatch(session: Session, question: str, briefs: dict[str, str] | None = No
             return s.output
         groups, note = compare(session, question, results)
         s.output = _report(session, results, groups, note, skipped, time.time() - started)
+        session.note("병렬 조사 결과 (비교 포함)", s.output)
         return s.output
 
 
@@ -120,6 +121,9 @@ def _research(session: Session, r: Researcher, question: str, brief: str) -> Res
         s.data.update(model=res.model, conclusion=res.conclusion, gaps=res.gaps, error=res.error,
                       claims=res.claims, read=res.read, evidence=[e.id for e in res.evidence])
         s.output = _fmt_result(res) if not res.error else f"실패: {res.error}"
+    if not res.error:  # a finished researcher need not run again if the question is continued
+        evidence = f"\n근거: {', '.join(e.id for e in res.evidence)}" if res.evidence else ""
+        session.note(f"조사원 끝남 · {r.label} ({r.key})", s.output + evidence)
     return res
 
 

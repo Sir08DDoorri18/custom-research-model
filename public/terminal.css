@@ -129,7 +129,7 @@ div.overflow-y-auto:has(.ai-message) { container-type: inline-size; }
 .rp-tag-single { color: hsl(var(--muted-foreground)); }
 .rp-row-meta { color: hsl(var(--muted-foreground)); font-size: 0.75rem; padding-left: 0.2rem; }
 
-/* ---------- answer window (public/elements/AnswerView.jsx), opened on the right ---------- */
+/* ---------- answer window (public/elements/답변창.jsx), opened on the right ---------- */
 .av {
   --av-ok: 145 30% 36%; --av-warn: 38 75% 40%; --av-bad: 0 60% 46%;
   display: flex; flex-direction: column; gap: 0.6rem;
@@ -190,6 +190,54 @@ div.overflow-y-auto:has(.ai-message) { container-type: inline-size; }
 .av-pill { font-size: 0.7rem; padding: 0 0.3rem; border: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); }
 .av-pill-verified { color: hsl(var(--av-ok)); }
 .av-pill-mismatch, .av-pill-bad { color: hsl(var(--av-bad)); }
+
+/* ---------- menu bar (public/rail.js): left rail on a laptop, bottom bar on a phone ---------- */
+:root { --rail-w: 76px; --rail-h: 58px; --rail-on: 210 55% 45%; }
+.dark { --rail-on: 210 60% 68%; }
+#rail {
+  position: fixed; z-index: 40; display: flex; align-items: center;
+  background: hsl(var(--background)); border-color: hsl(var(--border)); border-style: solid; border-width: 0;
+  font-family: var(--font-sans);
+}
+.rail-item {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.2rem;
+  color: hsl(var(--muted-foreground)); background: transparent; border: 0; cursor: pointer;
+  font-size: 0.68rem; line-height: 1.1; position: relative; transition: color 0.15s, background 0.15s;
+}
+.rail-item svg { width: 24px; height: 24px; stroke-width: 1.7; transition: stroke-width 0.15s, transform 0.15s; }
+.rail-item:hover { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
+.rail-item:hover svg { transform: scale(1.06); }
+.rail-item:focus-visible { outline: 2px solid hsl(var(--rail-on)); outline-offset: -2px; }
+/* on: bold icon and label in the accent color, like the filled tab icons in Instagram */
+.rail-on { color: hsl(var(--rail-on)); font-weight: 700; }
+.rail-on svg { stroke-width: 2.6; }
+.rail-on::before { content: ""; position: absolute; background: hsl(var(--rail-on)); border-radius: 2px; }
+.rail-brand { font-weight: 700; color: hsl(var(--foreground)); }
+
+@media (min-width: 900px) {
+  #rail { left: 0; top: 0; bottom: 0; width: var(--rail-w); flex-direction: column; gap: 0.25rem;
+          padding: 0.6rem 0.4rem; border-right-width: 1px; }
+  .rail-brand { font-size: 1.1rem; padding: 0.4rem 0 0.9rem; }
+  .rail-item { width: 100%; height: 60px; border-radius: 10px !important; }
+  .rail-on::before { left: -0.4rem; top: 14px; bottom: 14px; width: 3px; }
+  .rail-sep { width: 60%; border-top: 1px solid hsl(var(--border)); margin: 0.4rem 0; }
+  /* make room: the whole app moves right by the rail's width, the history sidebar included */
+  html.has-rail #root { margin-left: var(--rail-w); width: calc(100% - var(--rail-w)); }
+  html.has-rail #root .w-screen { width: calc(100vw - var(--rail-w)); }
+  /* the history sidebar opens next to the rail (closed, it slides off screen as usual) */
+  html.has-rail [data-state="expanded"] .fixed.inset-y-0.left-0 { left: var(--rail-w); }
+}
+@media (max-width: 899px) {
+  #rail { left: 0; right: 0; bottom: 0; height: var(--rail-h); flex-direction: row; justify-content: space-around;
+          border-top-width: 1px; padding: 0 0.25rem env(safe-area-inset-bottom); }
+  .rail-brand, .rail-sep { display: none; }
+  .rail-item { flex: 1; height: 100%; }
+  .rail-on::before { top: 0; left: 30%; right: 30%; height: 3px; }
+  html.has-rail #root { padding-bottom: var(--rail-h); }
+  html.has-rail #root .h-screen { height: calc(100vh - var(--rail-h)); }
+}
+/* the rail has these two; Chainlit's own header copies would be duplicates */
+html.has-rail #new-chat-button, html.has-rail #sidebar-trigger-button { display: none !important; }
 
 /* everything square */
 button, .rounded-3xl, .rounded-2xl, .rounded-xl, .rounded-lg { border-radius: 2px !important; }

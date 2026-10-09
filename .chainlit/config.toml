@@ -108,7 +108,7 @@ language = "ko"
 
 layout = "wide"
 
-default_sidebar_state = "hidden"
+default_sidebar_state = "closed"
 
 # Chat settings display location: "message_composer" (default) or "sidebar" (header)
 # chat_settings_location = "message_composer"
@@ -134,7 +134,7 @@ custom_css = "/public/terminal.css"
 
 # Specify a JavaScript file that can be used to customize the user interface.
 # The JavaScript file can be served from the public directory.
-# custom_js = "/public/test.js"
+custom_js = "/public/rail.js"
 
 # The style of alert boxes. Can be "classic" or "modern".
 alert_style = "classic"

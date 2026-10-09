@@ -1,4 +1,4 @@
-"""What the answer window shows (public/elements/AnswerView.jsx), in every mode.
+"""What the answer window shows (public/elements/답변창.jsx), in every mode.
 
 The answer is split into lines and sentences exactly as the checker split it (judge.sentences),
 so each sentence can carry its verdict: the window underlines it and shows the reason and the
