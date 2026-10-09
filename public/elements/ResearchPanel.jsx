@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 const MARK = { run: "▸", ok: "✓", err: "x" };
+const plain = (t) => (t || "").replace(/\*\*/g, "");  // models write markdown bold
 
 function Head({ status, title, model, seconds }) {
   return (
@@ -63,10 +64,10 @@ function Researcher({ r, opened, toggle }) {
       {r.status !== "run" ? (
         <div className="rp-result">
           {r.error ? <div className="rp-err">실패: {r.error}</div> : null}
-          {r.conclusion ? <div className="rp-conclusion">{r.conclusion}</div> : null}
+          {r.conclusion ? <div className="rp-conclusion">{plain(r.conclusion)}</div> : null}
           {r.claims.map((c, i) => (
             <div key={i} className="rp-claim">
-              - {c.claim} <span className="rp-ev">[{c.evidence.join(", ")}]</span>{" "}
+              - {plain(c.claim)} <span className="rp-ev">[{c.evidence.join(", ")}]</span>{" "}
               <span className={`rp-conf rp-conf-${c.confidence}`}>{c.confidence}</span>
             </div>
           ))}

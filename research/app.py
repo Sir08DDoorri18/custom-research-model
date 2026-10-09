@@ -29,7 +29,7 @@ warnings.filterwarnings("ignore", message=".*torch.jit.script.*", category=Futur
 
 from chainlit.input_widget import Select
 
-from research import cleanup, config, judge, llm, parallel, prompts
+from research import answer_view, cleanup, config, judge, llm, parallel, prompts
 from research.agents import make_agent
 from research.board import Board
 from research.engine import Session
@@ -197,13 +197,34 @@ async def turn(text: str, parent_id: str | None = None, uploads: list[tuple[str,
                cl.Action(name="counter", payload={}, label="반론 찾기")]
     if session.mode == "basic" and question and not uploads:
         actions.append(cl.Action(name="parallel", payload={"question": question[:4000]}, label="병렬 조사로 다시"))
+    view = None
     if report and (report.claims or report.uncited):
-        content += "\n\n---\n\n" + judge.render(report, session, answer)
+        # Verdicts per sentence and the sources go to the answer window; the chat keeps a summary.
+        view = answer_view.build(question or text, answer, report, session, session.mode)
+        views = cl.user_session.get("views") or {}
+        key = str(len(views) + 1)
+        views[key] = view
+        cl.user_session.set("views", views)
+        bits = [f"검증 {report.summary()}"] + ([f"출처 없는 수치 {len(report.uncited)}"] if report.uncited else [])
+        content += "\n\n---\n\n_" + " · ".join(bits) + " — 문장별 판정과 출처는 오른쪽 답변 창에서_"
+        actions.insert(0, cl.Action(name="view", payload={"key": key}, label="답변 창 열기"))
         problems = [f"- {c.sentence} ({c.reason})" for c in report.problems()]
         problems += [f"- {u} (출처 없음)" for u in report.uncited]
         if problems:
             actions.insert(0, cl.Action(name="fix", payload={"problems": "\n".join(problems)}, label="걸린 문장 고치기"))
     await cl.Message(content=content, actions=actions).send()
+    if view:
+        await _open_view(view)
+
+
+async def _open_view(view: dict) -> None:
+    """Show an answer in the window on the right (replacing whatever it showed)."""
+    try:
+        element = cl.CustomElement(name="AnswerView", props=view, display="side")
+        await cl.ElementSidebar.set_elements([element])
+        await cl.ElementSidebar.set_title("답변")
+    except Exception as e:  # the answer is already in the chat; never fail the turn over the window
+        print(f"[ui] answer window failed: {e}", flush=True)
 
 
 def _fix_bold(text: str) -> str:
@@ -267,6 +288,13 @@ async def deeper(action: cl.Action):
 @cl.action_callback("counter")
 async def counter(action: cl.Action):
     await _follow_up(prompts.COUNTER, "반론을 찾아줘")
+
+
+@cl.action_callback("view")
+async def reopen_view(action: cl.Action):
+    view = (cl.user_session.get("views") or {}).get(action.payload.get("key", ""))
+    if view:
+        await _open_view(view)
 
 
 @cl.action_callback("parallel")

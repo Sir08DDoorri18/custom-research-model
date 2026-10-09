@@ -80,7 +80,7 @@ def _judge_all(ref, items: list[dict], size: int = 6) -> list[str | None]:
         batch = items[start:start + size]
         body = "\n\n".join(f"[{k}] Sentence: {it['claim']}\nPassages:\n{it['premise']}" for k, it in enumerate(batch, 1))
         try:
-            reply = llm.call(ref, [{"role": "user", "content": prompts.JUDGE.format(items=body)}], f"eval {ref}")
+            reply = llm.call(ref, [{"role": "user", "content": prompts.JUDGE.format(items=body, language=config.language())}], f"eval {ref}")
             rows = llm.extract_json(reply.text)
         except llm.LLMError as e:
             print(f"  {ref}: {str(e)[:120]}")

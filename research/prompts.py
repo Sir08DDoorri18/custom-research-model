@@ -133,7 +133,7 @@ Reply with a JSON array only."""
 JUDGE = """You check whether sentences are supported by the source passages they cite.
 Judge ONLY from the passages, never from your own knowledge.
 
-For each item return {{"i": <number>, "verdict": "supported" | "partial" | "unsupported", "reason": "<one short sentence>"}}
+For each item return {{"i": <number>, "verdict": "supported" | "partial" | "unsupported", "reason": "<one short sentence in {language}>"}}
 - supported: the passages state it (paraphrase or translation is fine; numbers must match up to rounding)
 - partial: the main point is supported but a detail goes beyond or differs (number, scope, certainty, date, causality)
 - unsupported: the passages do not say it, or contradict it

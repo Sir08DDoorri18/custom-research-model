@@ -36,6 +36,7 @@ class Claim:
     votes: list[tuple[str, str, str]] = field(default_factory=list)
     final: str = "unchecked"
     reason: str = ""
+    spots: list[tuple[int, int]] = field(default_factory=list)  # (line, sentence) in the answer, for the answer view
 
 
 @dataclass
@@ -43,6 +44,7 @@ class Report:
     claims: list[Claim]
     uncited: list[str]
     checkers: list[str]
+    uncited_spots: list[tuple[int, int]] = field(default_factory=list)
 
     @property
     def counts(self) -> Counter:
@@ -57,19 +59,31 @@ class Report:
         return [c for c in self.claims if c.final in ("partial", "unsupported")]
 
 
-def split_claims(answer: str, session: Session) -> tuple[list[Claim], list[str]]:
+def checked_line(line: str) -> bool:
+    """Headings, tables and code fences are not checked sentence by sentence."""
+    line = line.strip()
+    return bool(line) and not line.startswith(("#", "|", "```"))
+
+
+def sentences(line: str) -> list[str]:
+    """A line split into sentences, the same way for checking and for the answer view."""
+    # "...입니다. [E1] 다음 문장" -> "...입니다 [E1]. 다음 문장", so the citation stays with its sentence
+    line = re.sub(r"([.!?。])\s*((?:\[E\d+[^\]]*\]\s*)+)", lambda m: f" {m.group(2).strip()}{m.group(1)} ",
+                  line.strip()).strip()
+    return re.split(r"(?<=[.!?。])\s+(?=\S)", line)
+
+
+def split_claims(answer: str, session: Session) -> tuple[list[Claim], list[tuple[str, tuple[int, int]]]]:
     """Cited sentences become claims. Uncited sentences just before a cited one in the same
-    paragraph are checked together with it (people often cite once at the end)."""
+    paragraph are checked together with it (people often cite once at the end).
+    Returns the claims and the uncited sentences with numbers, each with its (line, sentence)."""
     claims, uncited = [], []
     has_citations = bool(CITE.search(answer))
-    for line in answer.splitlines():
-        line = line.strip()
-        if not line or line.startswith(("#", "|", "```")):
+    for ln, line in enumerate(answer.splitlines()):
+        if not checked_line(line):
             continue
-        pending: list[str] = []
-        # "...입니다. [E1] 다음 문장" -> "...입니다 [E1]. 다음 문장", so the citation stays with its sentence
-        line = re.sub(r"([.!?。])\s*((?:\[E\d+[^\]]*\]\s*)+)", lambda m: f" {m.group(2).strip()}{m.group(1)} ", line)
-        for sent in re.split(r"(?<=[.!?。])\s+(?=\S)", line):
+        pending: list[tuple[str, tuple[int, int]]] = []
+        for sn, sent in enumerate(sentences(line)):
             ids = [("E" + x.lstrip("E")) for m in CITE.finditer(sent) for x in re.split(r"\s*[,，/]\s*", m.group(1))]
             text = _clean(sent)
             if len(text) < 8:
@@ -77,12 +91,13 @@ def split_claims(answer: str, session: Session) -> tuple[list[Claim], list[str]]
             if ids:
                 good = [i for i in dict.fromkeys(ids) if i in session.evidence]
                 bad = [i for i in ids if i not in session.evidence]
-                claims.append(Claim(len(claims) + 1, " ".join(pending + [text]), good, bad))
+                claims.append(Claim(len(claims) + 1, " ".join([t for t, _ in pending] + [text]), good, bad,
+                                    spots=[spot for _, spot in pending] + [(ln, sn)]))
                 pending = []
             else:
-                pending.append(text)
+                pending.append((text, (ln, sn)))
         if has_citations:  # numbers with no source, in an answer that otherwise cites
-            uncited += [t for t in pending if NUMBER.search(t)]
+            uncited += [(t, spot) for t, spot in pending if NUMBER.search(t)]
     return claims, uncited
 
 
@@ -109,7 +124,8 @@ def _around(passage: str, quote: str, n: int) -> str:
 def check(session: Session, answer: str) -> Report:
     trace.use(session.tracer)
     with session.tracer.span("답변 검증", "tool", input=answer, lane="verify") as root:
-        claims, uncited = split_claims(answer, session)
+        claims, uncited_at = split_claims(answer, session)
+        uncited = [t for t, _ in uncited_at]
         checkable = [c for c in claims if c.ids]
         for c in claims:
             if not c.ids:
@@ -159,7 +175,7 @@ def check(session: Session, answer: str) -> Report:
             for c in disputed:
                 c.final, c.reason = _decide(c)
 
-        report = Report(claims, uncited, checkers)
+        report = Report(claims, uncited, checkers, [spot for _, spot in uncited_at])
         root.output = report.summary() + "\n\n" + "\n".join(
             f"{BADGE[c.final]} {c.sentence[:100]} — {c.reason}" for c in claims)
         return report
@@ -174,20 +190,22 @@ def _judge_batch(role_or_ref, claims: list[Claim], session: Session, label: str,
 
     For a role, verdicts are stored on the claims right away as first-pass verdicts. For a
     specific model (a juror), they are returned instead, so the caller decides whose votes count.
+    Batches go out at the same time (calls to one provider are still spaced by llm.py).
     Returns (model used, [(claim, (verdict, reason, model))]).
     """
-    used, results = "", []
-    for n, start in enumerate(range(0, len(claims), size), 1):
-        batch = claims[start:start + size]
+    batches = [claims[start:start + size] for start in range(0, len(claims), size)]
+
+    def one(job) -> tuple[str, list]:
+        n, batch = job
         items = "\n\n".join(f"[{k}] Sentence: {c.sentence}\nPassages:\n{premise([session.evidence[i] for i in c.ids])}"
                             for k, c in enumerate(batch, 1))
-        msgs = [{"role": "user", "content": prompts.JUDGE.format(items=items)}]
+        msgs = [{"role": "user", "content": prompts.JUDGE.format(items=items, language=config.language())}]
         name = f"{label} {n}" if len(claims) > size else label
         if isinstance(role_or_ref, str):
             reply = llm.ask(role_or_ref, msgs, name)
         else:
             reply = llm.call(role_or_ref, msgs, name, timeout=timeout)
-        used = str(reply.model)
+        used, results = str(reply.model), []
         try:
             rows = llm.extract_json(reply.text)
         except llm.LLMError:
@@ -202,18 +220,22 @@ def _judge_batch(role_or_ref, claims: list[Claim], session: Session, label: str,
                 continue
             entry = (verdict, str(row.get("reason", "")), used)
             if isinstance(role_or_ref, str):
-                c.first = entry  # first-pass verdicts are kept even if a later batch fails
+                c.first = entry  # first-pass verdicts are kept even if another batch fails
             else:
                 results.append((c, entry))
-    return used, results
+        return used, results
+
+    done = trace.pmap(one, list(enumerate(batches, 1)), workers=len(batches))
+    return next((u for u, _ in done if u), ""), [r for _, rows in done for r in rows]
 
 
 def _run_jury(claims: list[Claim], session: Session) -> list[str]:
     """Three members from different families vote.
 
-    The members and one spare start together, each with a short time limit, so a slow or
+    The members and two spares start together, each with a short time limit, so a slow or
     dead member costs no extra waiting: the first three votes back are used. More spares are
-    tried only if fewer than three votes came back.
+    tried only if fewer than three votes came back, all at once. Two votes that agree on every
+    sentence are enough, since a third can't change the majority.
     """
     members, fallback = config.jury()
     pool = [m for m in fallback if llm.usable(m)]
@@ -222,8 +244,8 @@ def _run_jury(claims: list[Claim], session: Session) -> list[str]:
         chosen.append(pool.pop(0))
     if not chosen:
         return []
-    wave = chosen + pool[:1]
-    pool = pool[1:]
+    wave = chosen + pool[:2]  # two spares start with the members: free models often fail
+    pool = pool[2:]
 
     def vote(ref):
         try:
@@ -232,20 +254,33 @@ def _run_jury(claims: list[Claim], session: Session) -> list[str]:
         except llm.LLMError:
             return ref, None
 
-    with trace.span("④ 심사단", "tool", input=f"{len(claims)}개 문장") as s:
-        answered = []
-        executor = ThreadPoolExecutor(len(wave))
-        futures = [executor.submit(contextvars.copy_context().run, vote, ref) for ref in wave]
+    answered: list[tuple] = []
+
+    def settled() -> bool:
+        """Two matching votes on every sentence: a third vote can't change any majority."""
+        if len(answered) < 2:
+            return False
+        for c in claims:
+            votes = Counter(entry[0] for _, results in answered for cc, entry in results if cc is c)
+            if not votes or votes.most_common(1)[0][1] < 2:
+                return False
+        return True
+
+    def run(refs) -> None:
+        """Ask these jurors at once; stop waiting as soon as the votes are enough."""
+        executor = ThreadPoolExecutor(len(refs))
+        futures = [executor.submit(contextvars.copy_context().run, vote, ref) for ref in refs]
         for f in as_completed(futures):
             if f.result()[1]:
                 answered.append(f.result())
-            if len(answered) == 3:
-                break  # three votes are enough; don't wait for the slowest juror
+            if len(answered) >= 3 or settled():
+                break  # don't wait for the slowest juror
         executor.shutdown(wait=False, cancel_futures=True)
-        while len(answered) < 3 and pool:
-            o = vote(pool.pop(0))
-            if o[1]:
-                answered.append(o)
+
+    with trace.span("④ 심사단", "tool", input=f"{len(claims)}개 문장") as s:
+        run(wave)
+        if len(answered) < 3 and pool and not settled():
+            run(pool)  # remaining spares together, not one after another
         kept = answered[:3]
         for _, results in kept:
             for c, entry in results:
