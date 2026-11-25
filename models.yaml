@@ -15,38 +15,40 @@ language: Korean   # answer language
 # Each role tries its models in order and moves on when one fails (no key, 404, rate limit...).
 # Order chosen from `python -m research eval` runs (2026-09): models that actually answered,
 # fastest first. Mistral's free tier only serves its small models (ministral-14b scored best of them); Kimi K3 on NIM never answered.
+# 2026-11-25: DeepSeek v4.1 flash, GLM-5.3, Nemotron 3 Super, gpt-oss-20b and Gemma 4 31B left NIM (410 / gone);
+# replacements passed a number-reading check (goals, minutes, per-90, verbatim quote). Kimi K3.1 timed out again.
 roles:
   brain:   # only used by the no-claude preset
     - nim/nvidia/nemotron-3-ultra-550b-a55b
-    - nim/deepseek-ai/deepseek-v4.1-flash
+    - nim/nvidia/nemotron-3.5-super-vl-120b-a12b
     - nim/z-ai/glm-5.3-flash               # replaced the free Qwen on OpenRouter (removed 2026-10)
   rcs:     # reads source passages: relevance score + summary + verbatim quote
     - mistral/ministral-14b-latest
     - mistral/ministral-8b-latest
-    - nim/deepseek-ai/deepseek-v4.1-flash
+    - nim/nvidia/nemotron-3.5-lightning-30b-a3b
   vision:  # describes figures in added files and photos (these images leave this PC)
     - mistral/ministral-14b-latest       # ~2 s per image in tests
-    - nim/google/gemma-4-31b-it          # ~30 s
+    - nim/nvidia/nemotron-3.5-super-vl-120b-a12b   # vision-language model; not timed on images yet
     - openrouter/google/gemma-4-31b-it:free
   first:   # first-pass judge for every checked sentence
     - groq/openai/gpt-oss-120b
     - groq/openai/gpt-oss-20b
-    - nim/openai/gpt-oss-20b
+    - nim/nvidia/nemotron-3.5-lightning-30b-a3b
 
 # Jury: only sees sentences where the NLI model and the first judge disagree.
 # Keep the members from different model families; a failed member is replaced from jury_fallback.
 jury:
   - nim/nvidia/nemotron-3-ultra-550b-a55b
   - mistral/ministral-14b-latest
-  - nim/z-ai/glm-5.3
+  - nim/stepfun-ai/step-5-preview
 # One spare starts alongside the jury and the first three votes back are used, so the first
-# spare should be quick. DeepSeek on NIM timed out as a juror in every run, so it comes last.
+# spare should be quick. Mistral Large 4 on NIM answered correctly but took ~35 s, so it comes last.
 # (The free Qwen and GLM-5.2 on OpenRouter were removed in 2026-10; replaced with NIM models.)
 jury_fallback:
-  - openrouter/google/gemma-4-31b-it:free
+  - nim/nvidia/nemotron-3.5-super-vl-120b-a12b
   - nim/z-ai/glm-5.3-flash
-  - nim/nvidia/nemotron-3-super-120b-a12b
-  - nim/deepseek-ai/deepseek-v4.1-flash
+  - openrouter/google/gemma-4-31b-it:free
+  - nim/mistralai/mistral-large-4-1t-a52b
 
 # Parallel research mode (switch in the UI settings, or `ask --mode parallel`). Each researcher
 # searches and reads from its own angle at the same time; their claims are then compared.
@@ -61,7 +63,7 @@ parallel:
     papers:
       label: 논문
       search: papers
-      models: [mistral/ministral-14b-latest, nim/deepseek-ai/deepseek-v4.1-flash]
+      models: [mistral/ministral-14b-latest, nim/nvidia/nemotron-3.5-super-vl-120b-a12b]
     official:
       label: 공식 자료
       search: web
@@ -71,17 +73,18 @@ parallel:
       label: 뉴스·웹
       search: web
       prefer: [news, web]
-      models: [nim/nvidia/nemotron-3-ultra-550b-a55b, nim/deepseek-ai/deepseek-v4.1-flash, groq/openai/gpt-oss-20b]
+      models: [nim/nvidia/nemotron-3-ultra-550b-a55b, groq/qwen/qwen3.8-27b, groq/openai/gpt-oss-20b]
     counter:
       label: 반론
       search: both
-      # GLM on NIM is sometimes slow and OpenRouter's free quota runs out; the last two keep it running
-      models: [nim/z-ai/glm-5.3, openrouter/google/gemma-4-31b-it:free, nim/deepseek-ai/deepseek-v4.1-flash,
+      # Step is a family no other researcher uses. GLM flash is slow (~60 s) and OpenRouter's free
+      # quota runs out; ministral-8b at the end keeps it running
+      models: [nim/stepfun-ai/step-5-preview, nim/z-ai/glm-5.3-flash, openrouter/google/gemma-4-31b-it:free,
                mistral/ministral-8b-latest]
   compare:                  # groups the researchers' claims; falls back to the `first` role
     - groq/openai/gpt-oss-120b
     - mistral/ministral-14b-latest
-    - nim/deepseek-ai/deepseek-v4.1-flash
+    - nim/nvidia/nemotron-3.5-super-vl-120b-a12b
 
 # Added files are read on this PC with Docling. formulas: equations become LaTeX instead of
 # being dropped; about 3x slower (a 15-page paper: ~3 min instead of ~1 min on a laptop CPU).
